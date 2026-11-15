@@ -1,0 +1,67 @@
+# ---- Job Agent configuration ----
+# Edit this file to change what the agent looks for. No code changes needed.
+
+resume_path: resume.txt          # plain-text resume (or set the RESUME_TEXT env var / GitHub secret)
+model: claude-sonnet-5-5         # Claude model used for scoring
+min_score_to_email: 60           # only email jobs scoring at least this (0-100)
+max_jobs_to_score: 25            # cap on Claude calls per run (controls API cost)
+prefilter_keep_top: 40           # keyword pre-ranking keeps this many before scoring
+
+# Context given to Claude so scores reflect your real situation. Keep it TRUE.
+candidate_context: >
+  Final-year NTU Computer Science student graduating July 2027. International student
+  who needs employer work-pass sponsorship outside what a Student Pass allows, so roles
+  restricted to citizens/PR are not eligible. Seeking graduate / junior / intern roles.
+  Strongest areas: AI agents (LLM tool-use), Python/FastAPI/React full-stack, real-time
+  data pipelines (Flink). Weak areas: Go, Kafka, 3+ years of professional experience.
+
+search:
+  # A job is kept if its title contains ANY include word and NONE of the exclude words.
+  title_include:
+    - software engineer
+    - software developer
+    - backend
+    - back-end
+    - full stack
+    - full-stack
+    - fullstack
+    - data engineer
+    - ai engineer
+    - machine learning
+    - ml engineer
+    - graduate
+    - new grad
+    - intern
+    - junior
+    - associate
+  title_exclude:
+    - senior
+    - staff
+    - principal
+    - lead
+    - manager
+    - director
+    - head of
+    - vp
+    - sales
+    - recruit
+  # A job is kept if its location contains ANY of these (case-insensitive).
+  locations:
+    - singapore
+    - hong kong
+    - london
+    - dubai
+    - remote
+
+# Public job boards. A board that fails to load is skipped with a warning.
+# Verify a token by opening it in a browser:
+#   Greenhouse: https://boards-api.greenhouse.io/v1/boards/<token>/jobs
+#   Lever:      https://api.lever.co/v0/postings/<company>?mode=json
+boards:
+  greenhouse:
+    - stripe
+    - mw-tech-grad
+    - airwallex
+    - databricks
+  lever:
+    - palantir
