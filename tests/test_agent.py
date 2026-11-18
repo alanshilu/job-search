@@ -251,3 +251,67 @@ def test_no_llm_mode_needs_no_client(monkeypatch, tmp_path):
     cfg = dict(CFG, min_score_to_email=0)
     results = main.run(cfg, "python react fastapi", dry_run=True, use_llm=False)
     assert len(results) == 1
+
+
+# ---- extra sources (payload shapes are from public docs/memory; live use is untested) ----
+
+def _fake_get(payload):
+    return lambda *a, **k: SimpleNamespace(raise_for_status=lambda: None, json=lambda: payload)
+
+
+def test_fetch_ashby_parses_payload(monkeypatch):
+    payload = {"jobs": [{"id": "a1", "title": "SWE Intern", "location": "Singapore",
+                         "jobUrl": "https://a.test/a1", "descriptionPlain": "Build"}]}
+    monkeypatch.setattr(sources.requests, "get", _fake_get(payload))
+    job = sources.fetch_ashby("ramp")[0]
+    assert (job.source, job.title, job.description) == ("ashby", "SWE Intern", "Build")
+
+
+def test_fetch_mycareersfuture_parses_payload(monkeypatch):
+    payload = {"results": [{"uuid": "u1", "title": "Software Engineer", "postedCompany": {"name": "Acme"},
+                            "metadata": {"jobDetailsUrl": "https://m.test/u1"}, "description": "&lt;p&gt;Hi&lt;/p&gt;"}]}
+    monkeypatch.setattr(sources.requests, "get", _fake_get(payload))
+    job = sources.fetch_mycareersfuture("software engineer")[0]
+    assert (job.company, job.location, job.description) == ("Acme", "Singapore", "Hi")
+
+
+def test_fetch_adzuna_needs_keys_and_parses(monkeypatch):
+    monkeypatch.delenv("ADZUNA_APP_ID", raising=False)
+    with pytest.raises(RuntimeError):
+        sources.fetch_adzuna("gb:graduate")
+    monkeypatch.setenv("ADZUNA_APP_ID", "i")
+    monkeypatch.setenv("ADZUNA_APP_KEY", "k")
+    payload = {"results": [{"id": 7, "title": "Grad SWE", "company": {"display_name": "Acme"},
+                            "location": {"display_name": "London"}, "redirect_url": "https://z.test/7",
+                            "description": "python"}]}
+    monkeypatch.setattr(sources.requests, "get", _fake_get(payload))
+    job = sources.fetch_adzuna("gb:graduate")[0]
+    assert (job.company, job.location, job.source) == ("Acme", "London", "adzuna")
+
+
+def test_location_exclude_drops_us_only_remote():
+    search = dict(SEARCH, location_exclude=["united states", "us only"])
+    jobs = [make_job("1", location="Remote (Worldwide)"), make_job("2", location="Remote (United States)")]
+    assert [j.id for j in filters.filter_jobs(jobs, search)] == ["1"]
+
+
+def test_graduate_programme_titles_pass():
+    inc = ["graduate", "trainee"]
+    assert filters.title_ok("Technology Graduate Programme 2027", inc, ["senior"])
+    assert filters.title_ok("IT Trainee", inc, ["senior"])
+
+
+def test_fetch_remotive_parses_payload(monkeypatch):
+    payload = {"jobs": [{"id": 5, "title": "Junior Dev", "company_name": "Acme", "url": "https://r.test/5",
+                         "candidate_required_location": "Worldwide", "description": "<p>Python</p>"}]}
+    monkeypatch.setattr(sources.requests, "get", _fake_get(payload))
+    job = sources.fetch_remotive("junior")[0]
+    assert (job.location, job.description, job.source) == ("Remote (Worldwide)", "Python", "remotive")
+
+
+def test_fetch_remoteok_skips_legal_notice(monkeypatch):
+    payload = [{"legal": "notice"}, {"id": "9", "position": "Python Engineer", "company": "Acme",
+                                     "location": "", "url": "https://ro.test/9", "description": "x"}]
+    monkeypatch.setattr(sources.requests, "get", _fake_get(payload))
+    jobs = sources.fetch_remoteok("python")
+    assert len(jobs) == 1 and jobs[0].location == "Remote (Worldwide)"
