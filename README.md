@@ -54,6 +54,13 @@ pytest -q
 - `candidate_context`: what Claude should know about you (keep it true; it drives eligibility flags).
 - `min_score_to_email`, `max_jobs_to_score`: quality bar and cost cap.
 
+## Sources
+Company boards: Greenhouse, Lever, Ashby. Keyword searches across many employers: MyCareersFuture
+(Singapore, no key) and Adzuna (free key, many countries). Remote-only boards: Remotive and RemoteOK
+(no key). Remote roles restricted to other countries are dropped via `search.location_exclude`. LinkedIn and Indeed have no public API and
+scraping them breaks their rules, so they are not included. Add a new source by writing one
+`fetch_*` function in `src/sources.py` and registering it in `fetch_all`.
+
 ## Limits to know about
 - Only companies that publish on Greenhouse or Lever are covered. Workday, SuccessFactors and
   most bank career sites are not (add a new fetcher in `src/sources.py` for those).

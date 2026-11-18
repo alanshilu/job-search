@@ -23,8 +23,10 @@ def title_ok(title: str, include: list[str], exclude: list[str]) -> bool:
     return any(word.lower() in t for word in include)
 
 
-def location_ok(location: str, wanted: list[str]) -> bool:
+def location_ok(location: str, wanted: list[str], excluded: list[str] | None = None) -> bool:
     loc = (location or "").lower()
+    if any(x.lower() in loc for x in (excluded or [])):
+        return False
     return any(w.lower() in loc for w in wanted)
 
 
@@ -32,10 +34,11 @@ def filter_jobs(jobs: list[Job], search: dict) -> list[Job]:
     include = search.get("title_include", [])
     exclude = search.get("title_exclude", [])
     locations = search.get("locations", [])
+    loc_exclude = search.get("location_exclude", [])
     return [
         j
         for j in jobs
-        if title_ok(j.title, include, exclude) and location_ok(j.location, locations)
+        if title_ok(j.title, include, exclude) and location_ok(j.location, locations, loc_exclude)
     ]
 
 

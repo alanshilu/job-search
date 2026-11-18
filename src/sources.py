@@ -87,11 +87,128 @@ def fetch_lever(company: str) -> list[Job]:
     return jobs
 
 
+def fetch_ashby(name: str) -> list[Job]:
+    """Ashby job boards (jobs.ashbyhq.com/<name>)."""
+    resp = requests.get(
+        f"https://api.ashbyhq.com/posting-api/job-board/{name}",
+        params={"includeCompensation": "false"}, headers=HEADERS, timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    jobs = []
+    for item in resp.json().get("jobs", []):
+        jobs.append(
+            Job(
+                id=str(item.get("id", item.get("jobUrl", ""))),
+                title=item.get("title", ""),
+                company=_company_name(name),
+                location=item.get("location", "") or "",
+                url=item.get("jobUrl", ""),
+                description=item.get("descriptionPlain") or clean_html(item.get("descriptionHtml", "")),
+                source="ashby",
+            )
+        )
+    return jobs
+
+
+def fetch_mycareersfuture(query: str) -> list[Job]:
+    """Singapore government job portal, keyword search. Token = the search phrase."""
+    resp = requests.get(
+        "https://api.mycareersfuture.gov.sg/v2/jobs",
+        params={"search": query, "limit": 100, "page": 0, "sortBy": "new_posting_date"},
+        headers=HEADERS, timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    jobs = []
+    for item in resp.json().get("results", []):
+        meta = item.get("metadata") or {}
+        jobs.append(
+            Job(
+                id=str(item.get("uuid", "")),
+                title=item.get("title", ""),
+                company=(item.get("postedCompany") or {}).get("name", "Unknown"),
+                location="Singapore",
+                url=meta.get("jobDetailsUrl", ""),
+                description=clean_html(item.get("description", "")),
+                source="mycareersfuture",
+            )
+        )
+    return jobs
+
+
+def fetch_adzuna(token: str) -> list[Job]:
+    """Adzuna aggregator. Token = '<country code>:<search phrase>', e.g. 'gb:graduate software engineer'.
+    Needs free ADZUNA_APP_ID and ADZUNA_APP_KEY (developer.adzuna.com)."""
+    import os
+
+    country, _, query = token.partition(":")
+    app_id, app_key = os.environ.get("ADZUNA_APP_ID"), os.environ.get("ADZUNA_APP_KEY")
+    if not app_id or not app_key:
+        raise RuntimeError("ADZUNA_APP_ID / ADZUNA_APP_KEY not set")
+    resp = requests.get(
+        f"https://api.adzuna.com/v1/api/jobs/{country.strip()}/search/1",
+        params={"app_id": app_id, "app_key": app_key, "results_per_page": 50,
+                "what": query.strip(), "sort_by": "date", "content-type": "application/json"},
+        headers=HEADERS, timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    jobs = []
+    for item in resp.json().get("results", []):
+        jobs.append(
+            Job(
+                id=str(item.get("id", "")),
+                title=item.get("title", ""),
+                company=(item.get("company") or {}).get("display_name", "Unknown"),
+                location=(item.get("location") or {}).get("display_name", ""),
+                url=item.get("redirect_url", ""),
+                description=clean_html(item.get("description", "")),
+                source="adzuna",
+            )
+        )
+    return jobs
+
+
+def fetch_remotive(query: str) -> list[Job]:
+    """Remotive remote-jobs API (remotive.com). Token = search phrase."""
+    resp = requests.get("https://remotive.com/api/remote-jobs",
+                        params={"search": query, "limit": 100}, headers=HEADERS, timeout=TIMEOUT)
+    resp.raise_for_status()
+    jobs = []
+    for item in resp.json().get("jobs", []):
+        loc = item.get("candidate_required_location") or "Worldwide"
+        jobs.append(Job(
+            id=str(item.get("id", "")), title=item.get("title", ""),
+            company=item.get("company_name", "Unknown"), location=f"Remote ({loc})",
+            url=item.get("url", ""), description=clean_html(item.get("description", "")),
+            source="remotive"))
+    return jobs
+
+
+def fetch_remoteok(tag: str) -> list[Job]:
+    """RemoteOK public API (remoteok.com). Token = a tag such as 'python' or 'junior'."""
+    resp = requests.get("https://remoteok.com/api", params={"tag": tag}, headers=HEADERS, timeout=TIMEOUT)
+    resp.raise_for_status()
+    jobs = []
+    for item in resp.json():
+        if not isinstance(item, dict) or "position" not in item:  # first element is a legal notice
+            continue
+        loc = item.get("location") or "Worldwide"
+        jobs.append(Job(
+            id=str(item.get("id", "")), title=item.get("position", ""),
+            company=item.get("company", "Unknown"), location=f"Remote ({loc})",
+            url=item.get("url", ""), description=clean_html(item.get("description", "")),
+            source="remoteok"))
+    return jobs
+
+
 def fetch_all(boards: dict) -> tuple[list[Job], list[str]]:
     """Fetch every configured board. Returns (jobs, warnings); never raises on one bad board."""
     jobs: list[Job] = []
     warnings: list[str] = []
-    fetchers = {"greenhouse": fetch_greenhouse, "lever": fetch_lever}
+    fetchers = {
+        "greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby,
+        "mycareersfuture": fetch_mycareersfuture, "adzuna": fetch_adzuna,
+        "remotive": fetch_remotive, "remoteok": fetch_remoteok,
+    }
     for source, tokens in (boards or {}).items():
         fetch = fetchers.get(source)
         if fetch is None:

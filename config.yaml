@@ -31,6 +31,11 @@ search:
     - ml engineer
     - graduate
     - new grad
+    - early career
+    - trainee
+    - technology analyst
+    - technology associate
+    - campus
     - intern
     - junior
     - associate
@@ -52,6 +57,21 @@ search:
     - london
     - dubai
     - remote
+    - worldwide
+    - anywhere
+    - apac
+    - asia
+  # Drop remote roles restricted to places you can't work from (checked before 'locations').
+  location_exclude:
+    - united states
+    - usa
+    - us only
+    - "(us)"
+    - us-based
+    - canada
+    - latam
+    - europe only
+    - emea only
 
 # Public job boards. A board that fails to load is skipped with a warning.
 # Verify a token by opening it in a browser:
@@ -65,3 +85,25 @@ boards:
     - databricks
   lever:
     - palantir
+  ashby: []                 # company names from jobs.ashbyhq.com/<name>, e.g. ramp, notion
+  # Keyword searches across many employers (not tied to one company):
+  mycareersfuture:          # Singapore government job portal; no key needed
+    - software engineer intern
+    - graduate software engineer
+    - AI engineer
+    - graduate programme technology
+    - management associate technology
+  adzuna:                   # needs free ADZUNA_APP_ID / ADZUNA_APP_KEY secrets; format "country:search"
+    - "gb:graduate software engineer"
+    - "sg:software engineer intern"
+    - "gb:graduate scheme technology"
+    - "sg:graduate programme"
+    - "hk:graduate programme technology"
+  # Remote-only job boards (no key needed). Restricted-location roles are dropped by location_exclude.
+  remotive:
+    - junior software engineer
+    - graduate
+    - python developer
+  remoteok:
+    - junior
+    - python
