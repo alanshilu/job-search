@@ -30,7 +30,7 @@ def run(cfg: dict, resume: str, *, dry_run: bool, use_llm: bool, client=None) ->
     for w in warnings:
         print(f"  warning: {w}")
 
-    matching = filters.filter_jobs(all_jobs, cfg.get("search", {}))
+    matching = filters.dedupe(filters.filter_jobs(all_jobs, cfg.get("search", {})))
     state = filters.load_state(STATE_PATH)
     fresh = filters.only_new(matching, state)
     print(f"{len(matching)} match your filters; {len(fresh)} are new since the last run.")

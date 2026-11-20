@@ -39,6 +39,33 @@ search:
     - intern
     - junior
     - associate
+  # ...and it must ALSO contain one of these as a whole word, so "Junior Market Analyst"
+  # or "Junior Contact Center Agent" are dropped while "Junior Data Engineer" stays.
+  title_must_have_tech_word:
+    - software
+    - engineer
+    - engineering
+    - developer
+    - programmer
+    - backend
+    - back-end
+    - frontend
+    - front-end
+    - full stack
+    - full-stack
+    - fullstack
+    - data
+    - machine learning
+    - ml
+    - ai
+    - cloud
+    - devops
+    - platform
+    - technology
+    - tech
+    - it
+    - sre
+    - infrastructure
   title_exclude:
     - senior
     - staff
@@ -81,7 +108,6 @@ boards:
   greenhouse:
     - stripe
     - mw-tech-grad
-    - airwallex
     - databricks
   lever:
     - palantir

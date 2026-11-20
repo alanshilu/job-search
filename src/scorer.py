@@ -61,21 +61,55 @@ def parse_result(text: str) -> dict:
     }
 
 
+SCORE_TOOL = {
+    "name": "record_score",
+    "description": "Record the fit assessment for this resume and job.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "verdict": {"type": "string"},
+            "matched": {"type": "array", "items": {"type": "string"}},
+            "missing": {"type": "array", "items": {"type": "string"}},
+            "flags": {"type": "array", "items": {"type": "string"}},
+            "resume_tweaks": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["score", "verdict", "matched", "missing", "flags", "resume_tweaks"],
+    },
+}
+
+
+def extract_result(reply) -> dict:
+    """Read the score from a tool_use block if present, otherwise from JSON in the text."""
+    for block in reply.content:
+        if getattr(block, "type", "") == "tool_use":
+            return parse_result(json.dumps(block.input))
+    text = "".join(getattr(b, "text", "") for b in reply.content if getattr(b, "type", "") == "text")
+    try:
+        return parse_result(text)
+    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+        stop = getattr(reply, "stop_reason", "?")
+        snippet = text.strip().replace("\n", " ")[:120] or "<no text>"
+        raise ValueError(f"{exc} (stop_reason={stop}; reply starts: {snippet})") from exc
+
+
 def score_job(client, model: str, resume: str, job: Job, candidate_context: str) -> dict:
-    """Call Claude once for one job. On failure returns a dict with score None and an error."""
+    """Call Claude for one job. Forces structured output via a tool; falls back to plain JSON text.
+    On failure returns a dict with score None and an error message."""
+    base = dict(
+        model=model,
+        max_tokens=2000,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": build_user_prompt(resume, job, candidate_context)}],
+    )
+    attempts = [
+        dict(base, tools=[SCORE_TOOL], tool_choice={"type": "tool", "name": "record_score"}),
+        base,  # fallback if the tool call is rejected or malformed
+    ]
     last_error = ""
-    for _ in range(2):  # one retry
+    for kwargs in attempts:
         try:
-            reply = client.messages.create(
-                model=model,
-                max_tokens=700,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {"role": "user", "content": build_user_prompt(resume, job, candidate_context)}
-                ],
-            )
-            text = "".join(b.text for b in reply.content if getattr(b, "type", "") == "text")
-            return parse_result(text)
+            return extract_result(client.messages.create(**kwargs))
         except Exception as exc:
             last_error = str(exc)
     return {"score": None, "error": last_error}
