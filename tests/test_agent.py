@@ -139,6 +139,25 @@ class FakeClient:
         return SimpleNamespace(content=[SimpleNamespace(type="text", text=reply)])
 
 
+def test_score_job_reads_forced_tool_output():
+    block = SimpleNamespace(type="tool_use", input={"score": 77, "verdict": "ok", "matched": [], "missing": [],
+                                                     "flags": [], "resume_tweaks": []})
+    class C:
+        def __init__(self): self.messages = self; self.kwargs = None
+        def create(self, **kw):
+            self.kwargs = kw
+            return SimpleNamespace(content=[block], stop_reason="tool_use")
+    c = C()
+    res = scorer.score_job(c, "m", "r", make_job(), "ctx")
+    assert res["score"] == 77 and c.kwargs["tool_choice"]["name"] == "record_score"
+
+
+def test_parse_failure_error_includes_diagnostics():
+    client = FakeClient(["", ""])
+    res = scorer.score_job(client, "m", "r", make_job(), "ctx")
+    assert "stop_reason" in res["error"]
+
+
 def test_score_job_retries_once_then_succeeds():
     client = FakeClient([RuntimeError("rate limit"), GOOD_REPLY])
     res = scorer.score_job(client, "m", "resume", make_job(), "ctx")
@@ -196,7 +215,7 @@ def test_real_run_emails_once_and_never_repeats_jobs(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "STATE_PATH", tmp_path / "seen.json")
     monkeypatch.setenv("GMAIL_ADDRESS", "me@example.com")
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "pw")
-    patch_fetch(monkeypatch, [make_job("1"), make_job("2")])
+    patch_fetch(monkeypatch, [make_job("1"), make_job("2", title="Software Engineer Intern")])
     sent = []
     monkeypatch.setattr(main.emailer, "send_email", lambda *a, **k: sent.append(a))
     client = FakeClient([GOOD_REPLY, GOOD_REPLY])
@@ -277,7 +296,7 @@ def test_fetch_mycareersfuture_parses_payload(monkeypatch):
 
 def test_fetch_adzuna_needs_keys_and_parses(monkeypatch):
     monkeypatch.delenv("ADZUNA_APP_ID", raising=False)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(sources.MissingKey):
         sources.fetch_adzuna("gb:graduate")
     monkeypatch.setenv("ADZUNA_APP_ID", "i")
     monkeypatch.setenv("ADZUNA_APP_KEY", "k")
@@ -315,3 +334,24 @@ def test_fetch_remoteok_skips_legal_notice(monkeypatch):
     monkeypatch.setattr(sources.requests, "get", _fake_get(payload))
     jobs = sources.fetch_remoteok("python")
     assert len(jobs) == 1 and jobs[0].location == "Remote (Worldwide)"
+
+
+def test_tech_word_requirement_drops_non_tech_junior_roles():
+    search = dict(SEARCH, title_include=["junior", "graduate"], title_must_have_tech_word=["engineer", "data", "ai"])
+    jobs = [make_job("1", title="Junior Data Engineer"), make_job("2", title="Junior Contact Center Agent"),
+            make_job("3", title="Junior Retail Associate"), make_job("4", title="Graduate AI Developer")]
+    assert [j.id for j in filters.filter_jobs(jobs, search)] == ["1", "4"]
+
+
+def test_dedupe_same_company_and_title_across_sources():
+    a = make_job("1", title="Full-Stack Developer")
+    b = Job(id="x", title="Full Stack Developer", company="ACME", location="Remote", url="u", description="d", source="remoteok")
+    assert len(filters.dedupe([a, b])) == 1
+
+
+def test_missing_key_skips_whole_source_with_one_warning(monkeypatch):
+    def nokey(token):
+        raise sources.MissingKey("no key")
+    monkeypatch.setattr(sources, "fetch_adzuna", nokey)
+    _, warnings = sources.fetch_all({"adzuna": ["a", "b", "c"]})
+    assert warnings == ["adzuna skipped: no key"]

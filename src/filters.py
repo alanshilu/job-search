@@ -30,15 +30,35 @@ def location_ok(location: str, wanted: list[str], excluded: list[str] | None = N
     return any(w.lower() in loc for w in wanted)
 
 
+def has_tech_word(title: str, words: list[str]) -> bool:
+    """Whole-word match, so 'ai' matches 'AI Engineer' but not 'Retail'."""
+    t = title.lower()
+    return any(re.search(rf"(?<![a-z]){re.escape(w.lower())}(?![a-z])", t) for w in words)
+
+
+def dedupe(jobs: list[Job]) -> list[Job]:
+    """Drop the same company+title seen from several sources or locations."""
+    seen, out = set(), []
+    for j in jobs:
+        k = (re.sub(r"\W+", " ", j.company.lower()).strip(), re.sub(r"\W+", " ", j.title.lower()).strip())
+        if k not in seen:
+            seen.add(k)
+            out.append(j)
+    return out
+
+
 def filter_jobs(jobs: list[Job], search: dict) -> list[Job]:
     include = search.get("title_include", [])
     exclude = search.get("title_exclude", [])
+    tech = search.get("title_must_have_tech_word", [])
     locations = search.get("locations", [])
     loc_exclude = search.get("location_exclude", [])
     return [
         j
         for j in jobs
-        if title_ok(j.title, include, exclude) and location_ok(j.location, locations, loc_exclude)
+        if title_ok(j.title, include, exclude)
+        and location_ok(j.location, locations, loc_exclude)
+        and (not tech or has_tech_word(j.title, tech))
     ]
 
 

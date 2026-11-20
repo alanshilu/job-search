@@ -11,6 +11,10 @@ TIMEOUT = 20
 HEADERS = {"User-Agent": "job-agent/1.0 (personal job search tool)"}
 
 
+class MissingKey(RuntimeError):
+    """Raised when a source needs an API key that isn't configured; the whole source is skipped."""
+
+
 @dataclass(frozen=True)
 class Job:
     id: str
@@ -112,12 +116,20 @@ def fetch_ashby(name: str) -> list[Job]:
 
 def fetch_mycareersfuture(query: str) -> list[Job]:
     """Singapore government job portal, keyword search. Token = the search phrase."""
-    resp = requests.get(
-        "https://api.mycareersfuture.gov.sg/v2/jobs",
-        params={"search": query, "limit": 100, "page": 0, "sortBy": "new_posting_date"},
-        headers=HEADERS, timeout=TIMEOUT,
-    )
-    resp.raise_for_status()
+    last_exc = None
+    for _ in range(2):  # the portal is slow; retry once with a longer timeout
+        try:
+            resp = requests.get(
+                "https://api.mycareersfuture.gov.sg/v2/jobs",
+                params={"search": query, "limit": 50, "page": 0, "sortBy": "new_posting_date"},
+                headers=HEADERS, timeout=60,
+            )
+            resp.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            last_exc = exc
+    else:
+        raise last_exc
     jobs = []
     for item in resp.json().get("results", []):
         meta = item.get("metadata") or {}
@@ -143,7 +155,7 @@ def fetch_adzuna(token: str) -> list[Job]:
     country, _, query = token.partition(":")
     app_id, app_key = os.environ.get("ADZUNA_APP_ID"), os.environ.get("ADZUNA_APP_KEY")
     if not app_id or not app_key:
-        raise RuntimeError("ADZUNA_APP_ID / ADZUNA_APP_KEY not set")
+        raise MissingKey("ADZUNA_APP_ID / ADZUNA_APP_KEY not set")
     resp = requests.get(
         f"https://api.adzuna.com/v1/api/jobs/{country.strip()}/search/1",
         params={"app_id": app_id, "app_key": app_key, "results_per_page": 50,
@@ -217,6 +229,9 @@ def fetch_all(boards: dict) -> tuple[list[Job], list[str]]:
         for token in tokens or []:
             try:
                 jobs.extend(fetch(token))
+            except MissingKey as exc:  # no key: skip the rest of this source with one note
+                warnings.append(f"{source} skipped: {exc}")
+                break
             except Exception as exc:  # network error, bad token, bad JSON...
-                warnings.append(f"{source}/{token}: {exc}")
+                warnings.append(f"{source}/{token}: {type(exc).__name__}: {str(exc)[:160]}")
     return jobs, warnings
